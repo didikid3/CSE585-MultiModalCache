@@ -1,6 +1,12 @@
 import numpy as np
 from typing import List, Dict
+from sklearn.preprocessing import normalize
 
+
+
+def mean_pool_embeddings(patch_embeddings: np.ndarray) -> np.ndarray:
+    """Condense patch embeddings into a single vector using mean pooling."""
+    return np.mean(patch_embeddings, axis=0)
 
 class SemanticCache:
     def __init__(self, threshold: float = 0.5):
@@ -17,7 +23,9 @@ class SemanticCache:
         if norm1 == 0 or norm2 == 0:
             return 0.0
         
-        return dot_product / (norm1 * norm2)
+        similarity = dot_product / (norm1 * norm2)
+        print(f"Computed similarity: {similarity}")
+        return similarity
     
     def get(self, embedding: np.ndarray, default_tokens: List = None) -> List:
         """Retrieve cached tokens using semantic similarity."""
