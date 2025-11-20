@@ -20,6 +20,8 @@ def get_image_embedding(image_path: str,
     image = Image.open(image_path).convert('RGB')
     inputs = processor(images=image, return_tensors='pt')
     pixel_values = inputs.get('pixel_values')  # (B, 3, H, W)
+    if pixel_values is None:
+        raise ValueError("Processor did not return 'pixel_values'.")
 
     if device is None:
         device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
