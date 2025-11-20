@@ -20,7 +20,6 @@ class TransformerEmbeddingCache:
     def __init__(self, threshold: float = 0.8, model_name: str = 'google/vit-base-patch16-224'):
         # Caches keyed by embedding type names used elsewhere: 'pooled', 'cls_token', 'patch_pooled'
         self.pooled_cache = SemanticCache(threshold=threshold)
-        self.cls_token_cache = SemanticCache(threshold=threshold)
         self.patch_pooled_cache = SemanticCache(threshold=threshold)
 
         # Load ViT model and processor
@@ -34,98 +33,52 @@ class TransformerEmbeddingCache:
         print(f"Image size: {self.model.config.image_size}")
         print(f"Patch size: {self.model.config.patch_size}")
     
-    def extract_embeddings(self, image: Image.Image) -> Dict[str, np.ndarray]:
+    def extract_embeddings(self, image: Image.Image):
         """Extract different types of embeddings from an image."""
         
         # Preprocess image
         inputs = self.processor(images=image, return_tensors="pt")
         
         with torch.no_grad():
-            # Get ViT outputs
-            vit_outputs = self.model.vit(**inputs)
-            
-            # 1. Pooled embedding (global image representation)
-            pooled = getattr(vit_outputs, "pooler_output", None)
-            if pooled is None:
-                # Use CLS token if no pooler output
-                pooled = vit_outputs.last_hidden_state[:, 0, :]
-            pooled_np = pooled.cpu().numpy().flatten()
-            
-            # 2. CLS token embedding (first token of sequence)
-            cls_token = vit_outputs.last_hidden_state[:, 0, :].cpu().numpy().flatten()
-            
-            # 3. Patch embeddings (mean-pooled from all patch tokens, excluding CLS)
-            patch_tokens = vit_outputs.last_hidden_state[:, 1:, :]  # Exclude CLS token
-            patch_embeddings = patch_tokens.cpu().numpy().squeeze(0)  # Remove batch dim
-            patch_pooled = mean_pool_embeddings(patch_embeddings)
-            
-            return {
-                'pooled': pooled_np,
-                'cls_token': cls_token,
-                'patch_pooled': patch_pooled,
-                'full_sequence': vit_outputs.last_hidden_state.cpu().numpy().squeeze(0)  # Keep for analysis
-            }
+            # Get Image Patch Embeddings
+            full_patch_embeddings = self.model.vit.embeddings(pixel_values=inputs['pixel_values'])
+
+            mean_pooled = mean_pool_embeddings(full_patch_embeddings[0].numpy())
+
+        return full_patch_embeddings, mean_pooled
     
-    def cache_image_embeddings(self, image: Image.Image, tokens: List[str], image_id: str = None) -> Dict[str, bool]:
-        """Cache embeddings for an image with associated tokens."""
-        
-        embeddings = self.extract_embeddings(image)
-        
-        # Cache different embedding types
-        results = {}
-        
-        # Add image_id to tokens if provided
-        enhanced_tokens = tokens.copy()
-        if image_id:
-            enhanced_tokens.append(f"image_id:{image_id}")
-        
-        self.pooled_cache.put(embeddings['pooled'], enhanced_tokens)
-        self.cls_token_cache.put(embeddings['cls_token'], enhanced_tokens)
-        self.patch_pooled_cache.put(embeddings['patch_pooled'], enhanced_tokens)
-        
-        results['pooled'] = True
-        results['cls_token'] = True
-        results['patch_pooled'] = True
-        
-        return results
+    def get_model_output(self, image: Image.Image):
+        inputs = self.processor(images=image, return_tensors="pt")
+        with torch.no_grad():
+            outputs = self.model(**inputs)
+        return outputs
     
-    def query_similar_images(self, query_image: Image.Image, default_tokens: List[str] = None) -> Dict[str, Tuple[List[str], float]]:
-        """Query for similar images using different embedding types."""
-        
-        embeddings = self.extract_embeddings(query_image)
-        results = {}
-        
-        if default_tokens is None:
-            default_tokens = ["unknown_image"]
-        
-        # Query each cache type and return both tokens and similarity
-        for emb_type, embedding in [
-            ('pooled', embeddings['pooled']),
-            ('cls_token', embeddings['cls_token']),
-            ('patch_pooled', embeddings['patch_pooled'])
-        ]:
-            cache = getattr(self, f"{emb_type}_cache")
-            
-            # Get cached result
-            cached_tokens = cache.get(embedding, default_tokens.copy())
-            
-            # Calculate best similarity if cache has entries
-            best_similarity = 0.0
-            if len(cache.embeddings) > 0:
-                similarities = [cache.get_similarity(embedding, cached) for cached in cache.embeddings]
-                best_similarity = max(similarities)
-            
-            results[emb_type] = (cached_tokens, best_similarity)
-        
-        return results
+    def get_image_output(self, image):
+        full_patch_embeddings, mean_pooled = self.extract_embeddings(image)
+
+        res_full = self.pooled_cache.get(full_patch_embeddings)
+        res_mean = self.patch_pooled_cache.get(mean_pooled)
+
+        if(res_full == []):
+            res_full = self.get_model_output(image)
+            self.pooled_cache.put(full_patch_embeddings, res_full)
+        else:
+            print("FOUND IN POOLED CACHE")
+        if(res_mean == []):
+            res_mean = self.get_model_output(image)
+            self.patch_pooled_cache.put(mean_pooled, res_mean)
+        else:
+            print("FOUND IN PATCH POOLED CACHE")
+
+        return res_full
+
     
     def get_cache_stats(self) -> Dict[str, int]:
         """Get statistics about cached embeddings."""
         return {
             'pooled_entries': len(self.pooled_cache.embeddings),
-            'cls_token_entries': len(self.cls_token_cache.embeddings),
             'patch_pooled_entries': len(self.patch_pooled_cache.embeddings),
-            'total_entries': len(self.pooled_cache.embeddings) + len(self.cls_token_cache.embeddings) + len(self.patch_pooled_cache.embeddings)
+            'total_entries': len(self.pooled_cache.embeddings) + len(self.patch_pooled_cache.embeddings)
         }
 
 
@@ -173,39 +126,47 @@ def demonstrate_cache_functionality():
     for i, (image, tokens, image_id) in enumerate(sample_images):
         print(f"Caching image {i+1}: {image_id}")
         start_time = time.time()
-        results = cache_system.cache_image_embeddings(image, tokens, image_id)
+        results = cache_system.get_image_output(image)
         elapsed = time.time() - start_time
-        print(f"  Cached in {elapsed:.3f}s: {results}")
+        # print(f"  Cached in {elapsed:.3f}s: {results}")
     
     print(f"\nCache stats: {cache_system.get_cache_stats()}\n")
-    
-    # Test queries with the same images (should find matches)
-    print("=== Testing Queries ===")
-    for i, (query_image, original_tokens, image_id) in enumerate(sample_images):
-        print(f"\nQuerying with image {i+1} ({image_id}):")
+
+    print("TESTING TO SEE IF IMAGES GOT CACHED...")
+    for i, (image, tokens, image_id) in enumerate(sample_images):
+        print(f"Caching image {i+1}: {image_id}")
         start_time = time.time()
-        results = cache_system.query_similar_images(query_image, ["query_default"])
+        results = cache_system.get_image_output(image)
         elapsed = time.time() - start_time
-        
-        print(f"  Query completed in {elapsed:.3f}s")
-        for emb_type, (tokens, similarity) in results.items():
-            print(f"  {emb_type}: similarity={similarity:.3f}, tokens={tokens[:3]}...")
+        # print(f"  Cached in {elapsed:.3f}s: {results}")
     
-    # Test with a new image (should create new entries)
-    print(f"\n=== Testing New Image ===")
-    try:
-        new_url = 'http://images.cocodataset.org/val2017/000000252219.jpg'
-        new_image = Image.open(requests.get(new_url, stream=True).raw)
-        print("Querying with completely new image:")
+    # # Test queries with the same images (should find matches)
+    # print("=== Testing Queries ===")
+    # for i, (query_image, original_tokens, image_id) in enumerate(sample_images):
+    #     print(f"\nQuerying with image {i+1} ({image_id}):")
+    #     start_time = time.time()
+    #     results = cache_system.query_similar_images(query_image, ["query_default"])
+    #     elapsed = time.time() - start_time
         
-        results = cache_system.query_similar_images(new_image, ["new_image", "unknown"])
-        for emb_type, (tokens, similarity) in results.items():
-            print(f"  {emb_type}: similarity={similarity:.3f}, tokens={tokens}")
+    #     print(f"  Query completed in {elapsed:.3f}s")
+    #     for emb_type, (tokens, similarity) in results.items():
+    #         print(f"  {emb_type}: similarity={similarity:.3f}, tokens={tokens[:3]}...")
+    
+    # # Test with a new image (should create new entries)
+    # print(f"\n=== Testing New Image ===")
+    # try:
+    #     new_url = 'http://images.cocodataset.org/val2017/000000252219.jpg'
+    #     new_image = Image.open(requests.get(new_url, stream=True).raw)
+    #     print("Querying with completely new image:")
+        
+    #     results = cache_system.query_similar_images(new_image, ["new_image", "unknown"])
+    #     for emb_type, (tokens, similarity) in results.items():
+    #         print(f"  {emb_type}: similarity={similarity:.3f}, tokens={tokens}")
             
-    except Exception as e:
-        print(f"Failed to test new image: {e}")
+    # except Exception as e:
+    #     print(f"Failed to test new image: {e}")
     
-    print(f"\nFinal cache stats: {cache_system.get_cache_stats()}")
+    # print(f"\nFinal cache stats: {cache_system.get_cache_stats()}")
 
 
 def benchmark_embedding_types():
@@ -243,7 +204,7 @@ if __name__ == "__main__":
     
     try:
         demonstrate_cache_functionality()
-        benchmark_embedding_types()
+        # benchmark_embedding_types()
         print("\n✅ Demo completed successfully!")
         
     except Exception as e:
