@@ -1,10 +1,7 @@
 from transformers import ViTImageProcessor, ViTForImageClassification
 from PIL import Image
 import torch
-import torch.nn as nn
-import math
 import pandas as pd
-import numpy as np
 from tabulate import tabulate
 
 # Cosine Simlilarity and L2
@@ -12,10 +9,11 @@ from semantic_scripts.compare import compare_images
 from semantic_scripts.compressor import PatchCompressor
 
 
-def get_image_embedding(image_path, 
-                        processor,
-                        compressor,
-                        return_vector=True, device=None):
+def get_image_embedding(image_path: str, 
+                        processor: ViTImageProcessor,
+                        compressor: PatchCompressor,
+                        return_vector=True, device=None
+    ) -> torch.Tensor:
     """Load an image, compute ViT patch embeddings (via compressor), compress with a small CNN,
     and return either the compressed feature map or flattened vector."""
 
@@ -61,19 +59,17 @@ image_paths = [
 
 sims = []
 with torch.no_grad():
-    for image in image_paths:
-        vector = get_image_embedding(image, processor=processor, compressor=compressor, return_vector=True)
-        print(f'Image: {image[:10]}, Compressed vector shape: {vector.shape}')
-
     for i in range(len(image_paths)):
         for j in range(i + 1, len(image_paths)):
             img1 = image_paths[i]
             img2 = image_paths[j]
             e1 = get_image_embedding(img1, processor=processor, compressor=compressor, return_vector=True)
             e2 = get_image_embedding(img2, processor=processor, compressor=compressor, return_vector=True)
+
             cos = compare_images(e1, e2, method='cosine')
             l2 = compare_images(e1, e2, method='l2')
             dot = compare_images(e1, e2, method='dot')
+
             sims.append({
                 'img1': img1,
                 'img2': img2,
@@ -84,10 +80,10 @@ with torch.no_grad():
 
     sims_df = pd.DataFrame(sims)
 
-
-    print(tabulate(sims_df, headers='keys', 
-                tablefmt='psql', 
-                showindex=False
+    print(tabulate(
+        sims_df.to_numpy(), 
+        headers=sims_df.columns.to_list(), 
+        showindex=False
     ))
 
     

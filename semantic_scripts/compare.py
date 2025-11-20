@@ -1,4 +1,7 @@
-def cosine_similarity(a, b, eps=1e-8):
+import torch
+from typing import Union
+
+def cosine_similarity(a: torch.Tensor, b: torch.Tensor, eps=1e-8):
     """Compute cosine similarity between two vectors or batches."""
     # accept 1D or 2D tensors; return scalar for single pair or 1D tensor for batch
     a = a.squeeze()
@@ -13,7 +16,7 @@ def cosine_similarity(a, b, eps=1e-8):
     sims = (a_norm * b_norm).sum(dim=1)
     return sims.item() if sims.numel() == 1 else sims
 
-def l2_distance(a, b):
+def l2_distance(a: torch.Tensor, b: torch.Tensor):
     """Compute L2 (Euclidean) distance between two vectors or batches."""
     a = a.squeeze()
     b = b.squeeze()
@@ -23,9 +26,9 @@ def l2_distance(a, b):
     d = (a - b).norm(p=2, dim=1)
     return d.item() if d.numel() == 1 else d
 
-def compare_images(e1, e2,
+def compare_images(e1: torch.Tensor, e2: torch.Tensor,
                    method='cosine',
-                   device=None):
+                   device=None) -> Union[float, torch.Tensor]:
     """Compute similarity between two image paths using compressed embeddings."""
 
 
