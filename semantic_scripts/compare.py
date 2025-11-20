@@ -1,4 +1,3 @@
-# Similarity helpers: cosine, L2 and a convenience compare_images() function
 def cosine_similarity(a, b, eps=1e-8):
     """Compute cosine similarity between two vectors or batches."""
     # accept 1D or 2D tensors; return scalar for single pair or 1D tensor for batch
@@ -23,3 +22,23 @@ def l2_distance(a, b):
         b = b.unsqueeze(0)
     d = (a - b).norm(p=2, dim=1)
     return d.item() if d.numel() == 1 else d
+
+def compare_images(e1, e2,
+                   method='cosine',
+                   device=None):
+    """Compute similarity between two image paths using compressed embeddings."""
+
+
+    if method == 'cosine':
+        return cosine_similarity(e1, e2)
+    elif method == 'l2':
+        return l2_distance(e1, e2)
+    elif method == 'dot':
+        v1 = e1.squeeze()
+        v2 = e2.squeeze()
+        if v1.ndim == 2:
+            v1 = v1.squeeze(0)
+            v2 = v2.squeeze(0)
+        return (v1 * v2).sum().item()
+    else:
+        raise ValueError(f'Unknown method: {method}')
