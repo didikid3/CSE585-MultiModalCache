@@ -13,6 +13,9 @@ from sematic_cache import SemanticCache, mean_pool_embeddings
 from typing import Dict, List, Optional, Tuple
 import time
 
+from semantic_scripts.compressor import PatchCompressor
+from compress_vectors import get_image_embedding
+
 
 class TransformerEmbeddingCache:
     """Enhanced semantic cache specifically designed for transformer embeddings."""
@@ -26,12 +29,15 @@ class TransformerEmbeddingCache:
         print(f"Loading model: {model_name}")
         self.processor = ViTImageProcessor.from_pretrained(model_name)
         self.model = ViTForImageClassification.from_pretrained(model_name)
-        self.model.eval()
 
-        print(f"Model loaded successfully!")
-        print(f"Hidden dimension: {self.model.config.hidden_size}")
-        print(f"Image size: {self.model.config.image_size}")
-        print(f"Patch size: {self.model.config.patch_size}")
+        self.embedding_layer = self.model.vit.embeddings
+        _hidden_size = self.model.config.hidden_size
+        _patch_size = getattr(self.model.config, 'patch_size', 16)
+
+        self.compressor = PatchCompressor(embedding_layer=self.embedding_layer, in_channels=_hidden_size, compressed_channels=64)
+
+        self.model.eval()
+        self.compressor.eval()
     
     def extract_embeddings(self, image: Image.Image):
         """Extract different types of embeddings from an image."""
@@ -41,11 +47,14 @@ class TransformerEmbeddingCache:
         
         with torch.no_grad():
             # Get Image Patch Embeddings
-            full_patch_embeddings = self.model.vit.embeddings(pixel_values=inputs['pixel_values'])
+            compressed_vector = get_image_embedding(
+                inputs,
+                self.compressor,
+                return_vector=True, device='cpu'
+            )
 
-            mean_pooled = mean_pool_embeddings(full_patch_embeddings[0].numpy())
 
-        return full_patch_embeddings, mean_pooled
+        return compressed_vector
     
     def get_model_output(self, image: Image.Image):
         inputs = self.processor(images=image, return_tensors="pt")
@@ -54,23 +63,18 @@ class TransformerEmbeddingCache:
         return outputs
     
     def get_image_output(self, image):
-        full_patch_embeddings, mean_pooled = self.extract_embeddings(image)
+        compressed_vector = self.extract_embeddings(image)
 
-        res_full = self.pooled_cache.get(full_patch_embeddings)
-        res_mean = self.patch_pooled_cache.get(mean_pooled)
+        res = self.patch_pooled_cache.get(compressed_vector.numpy())
 
-        if(res_full == []):
-            res_full = self.get_model_output(image)
-            self.pooled_cache.put(full_patch_embeddings, res_full)
-        else:
-            print("FOUND IN POOLED CACHE")
-        if(res_mean == []):
-            res_mean = self.get_model_output(image)
-            self.patch_pooled_cache.put(mean_pooled, res_mean)
+        if(res == []):
+            res = self.get_model_output(image)
+    
+            self.patch_pooled_cache.put(compressed_vector.numpy(), res)
         else:
             print("FOUND IN PATCH POOLED CACHE")
 
-        return res_full
+        return res
 
     
     def get_cache_stats(self) -> Dict[str, int]:
@@ -128,6 +132,7 @@ def demonstrate_cache_functionality():
         start_time = time.time()
         results = cache_system.get_image_output(image)
         elapsed = time.time() - start_time
+        print(f"  Cached in {elapsed:.3f}s")
         # print(f"  Cached in {elapsed:.3f}s: {results}")
     
     print(f"\nCache stats: {cache_system.get_cache_stats()}\n")
@@ -138,6 +143,7 @@ def demonstrate_cache_functionality():
         start_time = time.time()
         results = cache_system.get_image_output(image)
         elapsed = time.time() - start_time
+        print(f"  Run in {elapsed:.3f}s")
         # print(f"  Cached in {elapsed:.3f}s: {results}")
     
     # # Test queries with the same images (should find matches)
