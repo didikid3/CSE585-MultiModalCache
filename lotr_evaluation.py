@@ -10,13 +10,14 @@ import pandas as pd
 import matplotlib.pyplot as plt    
 import csv
 import time
+import glob
 
 np.random.seed(67)
 
 # Dataset paths
-dataset_root = Path("chest_xray/test")
-normal_dir = dataset_root / "NORMAL"
-pneumonia_dir = dataset_root / "PNEUMONIA"
+ghandalf_images = "lotr-frames/ghandalf*.png"
+froto_images = "lotr-frames/froto*.png"
+wideshot_images = "lotr_frames/wide*.png"
 
 # Classification pipeline
 def classification_pipeline(cache, image, label):
@@ -43,10 +44,12 @@ def get_images(seed):
     # Collect all image paths with labels
     print("Collecting image paths...")
     image_data = []
-    for img_path in normal_dir.glob("*.jpeg"):
-        image_data.append((str(img_path), "NORMAL"))
-    for img_path in pneumonia_dir.glob("*.jpeg"):
-        image_data.append((str(img_path), "PNEUMONIA"))
+    for img_path in glob.glob(ghandalf_images):
+        image_data.append((str(img_path), "GHANDALF"))
+    for img_path in glob.glob(froto_images):
+        image_data.append((str(img_path), "FROTO"))
+    for img_path in glob.glob(wideshot_images):
+        image_data.append((str(img_path), "WIDESHOT"))
 
     # Shuffle the dataset
     print("Shuffling image data...")
@@ -56,8 +59,8 @@ def get_images(seed):
 
 def write_results_to_csv(threshold, hit_rate, correct_rate, time_taken):
 
-    file_exists = os.path.isfile('xray_eval_vit.csv')
-    with open('xray_eval_vit.csv', mode='a', newline='') as file:
+    file_exists = os.path.isfile('lotr_eval_vit.csv')
+    with open('lotr_eval_vit.csv', mode='a', newline='') as file:
         writer = csv.writer(file)
         if not file_exists:
             writer.writerow(['Threshold', 'Cache Hit Rate', 'Correct Classification Rate from Cache Hits', 'Time Taken'])
@@ -119,7 +122,7 @@ def evaluate(threshold, verbose=True):
 
 def plot_thresholds():
 
-    df = pd.read_csv('xray_eval_vit.csv')
+    df = pd.read_csv('lotr_eval_vit.csv')
     df = df.sort_values(by='Threshold')
 
     fig, ax1 = plt.subplots(figsize=(8,5))
@@ -147,9 +150,9 @@ def plot_thresholds():
     ax2.spines['top'].set_visible(False)
     ax1.legend(lines1 + lines2, labels1 + labels2, loc="lower left")
 
-    plt.title("Threshold Evaluation on XRay Dataset")
+    plt.title("Threshold Evaluation on LOTR Frames Dataset")
     #plt.tight_layout()
-    plt.savefig("xray_threshold_evaluation.png")   
+    plt.savefig("lotr_threshold_evaluation.png")   
 
 
 if __name__ == "__main__":
