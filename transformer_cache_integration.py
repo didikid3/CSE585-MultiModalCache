@@ -50,7 +50,7 @@ class TransformerEmbeddingCache:
             compressed_vector = get_image_embedding(
                 inputs,
                 self.compressor,
-                return_vector=True, device='gpu'
+                return_vector=True
             )
 
 
