@@ -31,8 +31,8 @@ def get_image_embedding(
 
     if return_vector:
         # flatten spatial grid into a single vector per image
-        return compressed_map.flatten(start_dim=1).cpu()
-    return compressed_map.cpu()
+        return compressed_map.flatten(start_dim=1)
+    return compressed_map
 
 if __name__ == "__main__":
     processor = ViTImageProcessor.from_pretrained('google/vit-base-patch16-224')

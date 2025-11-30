@@ -1,3 +1,5 @@
+image_net/ImageNetV2-threshold-0.7/
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[codz]

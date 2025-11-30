@@ -50,7 +50,7 @@ class TransformerEmbeddingCache:
             compressed_vector = get_image_embedding(
                 inputs,
                 self.compressor,
-                return_vector=True, device='cpu'
+                return_vector=True, device='gpu'
             )
 
 
@@ -66,15 +66,17 @@ class TransformerEmbeddingCache:
         compressed_vector = self.extract_embeddings(image)
 
         res = self.patch_pooled_cache.get(compressed_vector.numpy())
+        hit = False
 
         if(res == []):
             res = self.get_model_output(image)
     
             self.patch_pooled_cache.put(compressed_vector.numpy(), res)
         else:
-            print("FOUND IN PATCH POOLED CACHE")
+            # print("FOUND IN PATCH POOLED CACHE")
+            hit = True
 
-        return res
+        return res, hit
 
     
     def get_cache_stats(self) -> Dict[str, int]:
