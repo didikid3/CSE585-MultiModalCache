@@ -62,19 +62,19 @@ def evaluate(threshold):
 
     return hit_rate, correct_rate, time_taken
 
-def write_results_to_csv(threshold, hit_rate, correct_rate):
+def write_results_to_csv(threshold, hit_rate, correct_rate, time_taken):
 
     file_exists = os.path.isfile('image_net_evaluation_time_results.csv')
     with open('image_net_evaluation_time_results.csv', mode='a', newline='') as file:
         writer = csv.writer(file)
         if not file_exists:
             writer.writerow(['Threshold', 'Hit Rate', 'Correct Rate', 'Time Taken (s)'])
-        writer.writerow([threshold, hit_rate, correct_rate])
+        writer.writerow([threshold, hit_rate, correct_rate, time_taken])
 
 if __name__ == "__main__":
     thresholds = [round(0.5 + i*0.05, 2) for i in range(9)]
     thresholds.extend([round(0.65 + i*0.02, 2) for i in range(13)])
     for threshold in tqdm.tqdm(thresholds, desc="Thresholds", unit="threshold"):
         hit_rate, correct_rate, time_taken = evaluate(threshold)
-        write_results_to_csv(threshold, hit_rate, correct_rate)
+        write_results_to_csv(threshold, hit_rate, correct_rate, time_taken)
 
